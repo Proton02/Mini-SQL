@@ -52,8 +52,13 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
     return;
   }
   // 如果当前数据页对应的页帧已经在lru_list中，则直接返回
-  if(std::find(victims.begin(), victims.end(), frame_id) != victims.end()) {
-    return;
+  // if(std::find(victims.begin(), victims.end(), frame_id) != victims.end()) {
+  //   return;
+  // }
+  for(auto it = victims.begin(); it != victims.end(); it++) {
+    if(*it == frame_id) {
+      return;
+    }
   }
   // 将数据页对应的页帧放入lru_list中
   victims.push_front(frame_id);
