@@ -120,5 +120,9 @@ uint32_t Column::DeserializeFrom(char *buf, Column *&column) {
   else
     column = new Column(name_temp, type_temp, table_ind_temp, nullable_temp, unique_temp);
   return size;
+<<<<<<< HEAD
 
 }
+=======
+}
+>>>>>>> dbf6a3607a31ed04099eef56eb91a0295d8766e9

@@ -42,44 +42,102 @@ Page *BufferPoolManager::FetchPage(page_id_t page_id) {
   // list<frame_id_t> free_list_;                       // to find a free page for replacement
   // recursive_mutex latch_;                            // to protect shared data structure
 
-    frame_id_t tmp;
-    if(page_id > MAX_VALID_PAGE_ID || page_id <= INVALID_PAGE_ID) return nullptr;
-
-    //If P exists, pin it and return it immediately.
-    if(page_table_.count(page_id)>0){
-      tmp = page_table_[page_id];
-      replacer_->Pin(tmp);
-      pages_[tmp].pin_count_++;
-      return &pages_[tmp];
+  frame_id_t frame_id_temp;
+  if(page_id > MAX_VALID_PAGE_ID || page_id <= INVALID_PAGE_ID)
+      return nullptr;
+  // 1.     Search the page table for the requested page (P).
+  bool flag = false;
+  for(auto it = page_table_.begin(); it != page_table_.end(); it++) {
+    if(it->first == page_id) {
+      flag = true;
+      break;
     }
-    //p dos not exist
-    if(free_list_.size()>0){//from freelist
-      tmp = free_list_.front();//pick from the head of the free list
-      page_table_[page_id] = tmp;//update page_table_
-      free_list_.pop_front();////delete the frame id from free list
-
-      disk_manager_->ReadPage(page_id, pages_[tmp].data_);
-      pages_[tmp].pin_count_ = 1;
-      pages_[tmp].page_id_ = page_id;
-
-      return &pages_[tmp];
-    }
-    else{//from replacer
-      bool flag = replacer_->Victim(&tmp);
-      if(flag==false) return nullptr;
-      if(pages_[tmp].IsDirty()){//write back to the disk
-        disk_manager_->WritePage(pages_[tmp].GetPageId(),pages_[tmp].GetData());
-      }
-      //update the pages_
-      pages_[tmp].page_id_ = page_id;
-      pages_[tmp].pin_count_ = 1;
-      page_table_[page_id] = tmp;
-      //readpage from disk
-      disk_manager_->ReadPage(page_id,pages_[tmp].data_);
-      return &pages_[tmp];
-    }
-
+  }
+  // 1.1    If P exists, pin it and return it immediately.
+  if(flag == true){
+    frame_id_temp = page_table_[page_id];
+    // 给指定的frame_id上锁
+    replacer_->Pin(frame_id_temp);
+    pages_[frame_id_temp].pin_count_++;
+    return &pages_[frame_id_temp];
+  }
+  // 1.2    If P does not exist, find a replacement page (R) from either the free list or the replacer.
+  //        Note that pages are always found from the free list first.
+  if(free_list_.size() == 0 && replacer_->Size() == 0)
     return nullptr;
+  else {
+    if(free_list_.size()>0){
+      //pick from the head of the free list
+      frame_id_temp = free_list_.front();
+      //delete the frame id from free list
+      free_list_.pop_front();
+      //update page_table_
+      page_table_[page_id] = frame_id_temp;
+      // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
+      disk_manager_->ReadPage(page_id, pages_[frame_id_temp].data_);
+      pages_[frame_id_temp].pin_count_ = 1;
+      pages_[frame_id_temp].page_id_ = page_id;
+      return &pages_[frame_id_temp];
+    }
+    else{
+      if(replacer_->Victim(&frame_id_temp) == false)
+        return nullptr;
+      // 2.     If R is dirty, write it back to the disk.
+      if(pages_[frame_id_temp].IsDirty()){
+        disk_manager_->WritePage(pages_[frame_id_temp].GetPageId(),pages_[frame_id_temp].GetData());
+      }
+      // 3.     Delete R from the page table and insert P.
+      // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
+      pages_[frame_id_temp].page_id_ = page_id;
+      pages_[frame_id_temp].pin_count_ = 1;
+      page_table_[page_id] = frame_id_temp;
+      //readpage from disk
+      disk_manager_->ReadPage(page_id,pages_[frame_id_temp].data_);
+      return &pages_[frame_id_temp];
+    }
+  }
+  //
+  //
+  // return nullptr;
+    // frame_id_t tmp;
+    // //梁嘉琦加的
+    // if(page_id > MAX_VALID_PAGE_ID || page_id <= INVALID_PAGE_ID) return nullptr;
+    //
+    // //If P exists, pin it and return it immediately.
+    // if(page_table_.count(page_id)>0){
+    //   tmp = page_table_[page_id];
+    //   replacer_->Pin(tmp);
+    //   pages_[tmp].pin_count_++;
+    //   return &pages_[tmp];
+    // }
+    // //p dos not exist
+    // if(free_list_.size()>0){//from freelist
+    //   tmp = free_list_.front();//pick from the head of the free list
+    //   page_table_[page_id] = tmp;//update page_table_
+    //   free_list_.pop_front();////delete the frame id from free list
+    //
+    //   disk_manager_->ReadPage(page_id, pages_[tmp].data_);
+    //   pages_[tmp].pin_count_ = 1;
+    //   pages_[tmp].page_id_ = page_id;
+    //
+    //   return &pages_[tmp];
+    // }
+    // else{//from replacer
+    //   bool flag = replacer_->Victim(&tmp);
+    //   if(flag==false) return nullptr;
+    //   if(pages_[tmp].IsDirty()){//write back to the disk
+    //     disk_manager_->WritePage(pages_[tmp].GetPageId(),pages_[tmp].GetData());
+    //   }
+    //   //update the pages_
+    //   pages_[tmp].page_id_ = page_id;
+    //   pages_[tmp].pin_count_ = 1;
+    //   page_table_[page_id] = tmp;
+    //   //readpage from disk
+    //   disk_manager_->ReadPage(page_id,pages_[tmp].data_);
+    //   return &pages_[tmp];
+    // }
+    //
+    // return nullptr;
 }
 
 /**

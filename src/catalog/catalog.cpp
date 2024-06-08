@@ -2,26 +2,19 @@
 
 void CatalogMeta::SerializeTo(char *buf) const {
   ASSERT(GetSerializedSize() <= PAGE_SIZE, "Failed to serialize catalog metadata to disk.");
-  // Catalog_metadata_magic_num
   MACH_WRITE_UINT32(buf, CATALOG_METADATA_MAGIC_NUM);
   buf += 4;
-  // table_meta_pages_.size()
   MACH_WRITE_UINT32(buf, table_meta_pages_.size());
   buf += 4;
-  // index_meta_pages_.size()
   MACH_WRITE_UINT32(buf, index_meta_pages_.size());
   buf += 4;
-  // table_meta_pages_
   for (auto iter : table_meta_pages_) {
-    // std::map<table_id_t, page_id_t> table_meta_pages_;
     MACH_WRITE_TO(table_id_t, buf, iter.first);
     buf += 4;
     MACH_WRITE_TO(page_id_t, buf, iter.second);
     buf += 4;
   }
-  // index_meta_pages_
   for (auto iter : index_meta_pages_) {
-    // std::map<index_id_t, page_id_t> index_meta_pages_;
     MACH_WRITE_TO(index_id_t, buf, iter.first);
     buf += 4;
     MACH_WRITE_TO(page_id_t, buf, iter.second);
@@ -46,7 +39,6 @@ CatalogMeta *CatalogMeta::DeserializeFrom(char *buf) {
     buf += 4;
     auto table_heap_page_id = MACH_READ_FROM(page_id_t, buf);
     buf += 4;
-    // create table_meta_page
     meta->table_meta_pages_.emplace(table_id, table_heap_page_id);
   }
   for (uint32_t i = 0; i < index_nums; i++) {
@@ -72,12 +64,12 @@ CatalogMeta::CatalogMeta() {}
 /**
  * TODO: Student Implement
  */
-
 // CatalogManager能够在数据库实例（DBStorageEngine）初次创建时（init = true）初始化元数据；
 // 并在后续重新打开数据库实例时，从数据库文件中加载所有的表和索引信息，构建TableInfo和IndexInfo信息置于内存中。
 CatalogManager::CatalogManager(BufferPoolManager *buffer_pool_manager, LockManager *lock_manager,
                                LogManager *log_manager, bool init)
     : buffer_pool_manager_(buffer_pool_manager), lock_manager_(lock_manager), log_manager_(log_manager) {
+//    ASSERT(false, "Not Implemented yet");
   Page * catalog_meta_page = buffer_pool_manager->FetchPage(CATALOG_META_PAGE_ID);
   char* catalog_meta_page_data = catalog_meta_page->GetData();
   if(init == true) {
@@ -148,13 +140,11 @@ dberr_t CatalogManager::CreateTable(const string &table_name, TableSchema *schem
   catalog_meta_->SerializeTo(catalog_meta_page->GetData());
   buffer_pool_manager_->UnpinPage(CATALOG_META_PAGE_ID, true);
   return DB_SUCCESS;
-
 }
 
 /**
  * TODO: Student Implement
  */
- //question
 dberr_t CatalogManager::GetTable(const string &table_name, TableInfo *&table_info) {
   // tables_是一个map，key是table_id，value是table_info
   // table_names_是一个map，key是table_name，value是table_id
@@ -171,7 +161,6 @@ dberr_t CatalogManager::GetTable(const string &table_name, TableInfo *&table_inf
 /**
  * TODO: Student Implement
  */
- //question
 dberr_t CatalogManager::GetTables(vector<TableInfo *> &tables) const {
   if(tables_.empty()) {
     return DB_FAILED;
@@ -186,8 +175,8 @@ dberr_t CatalogManager::GetTables(vector<TableInfo *> &tables) const {
  * TODO: Student Implement
  */
 dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string &index_name,
-                                    const std::vector<std::string> &index_keys, Txn *txn,
-                                    IndexInfo *&index_info, const string &index_type) {
+                                    const std::vector<std::string> &index_keys, Txn *txn, IndexInfo *&index_info,
+                                    const string &index_type) {
   // 1. 检查table_name是否存在
   if(table_names_.find(table_name) == table_names_.end()) {
     return DB_TABLE_NOT_EXIST;
@@ -292,8 +281,6 @@ dberr_t CatalogManager::GetTableIndexes(const std::string &table_name, std::vect
     return DB_INDEX_NOT_FOUND;
   }
   return DB_SUCCESS;
-
-
 }
 
 /**
@@ -315,7 +302,6 @@ dberr_t CatalogManager::DropTable(const string &table_name) {
   catalog_meta_->SerializeTo(catalog_meta_page->GetData());
   buffer_pool_manager_->UnpinPage(CATALOG_META_PAGE_ID, true);
   return DB_SUCCESS;
-
 }
 
 /**
@@ -385,9 +371,6 @@ dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t pag
 }
 
 /**
- *
- *
- *
  * TODO: Student Implement
  */
 dberr_t CatalogManager::LoadIndex(const index_id_t index_id, const page_id_t page_id) {

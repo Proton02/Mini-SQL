@@ -122,7 +122,10 @@ uint32_t Row::DeserializeFrom(char *buf, Schema *schema) {
   }
   delete[] null_bitmap;
   return size;
+<<<<<<< HEAD
 
+=======
+>>>>>>> dbf6a3607a31ed04099eef56eb91a0295d8766e9
 }
 
 uint32_t Row::GetSerializedSize(Schema *schema) const {
