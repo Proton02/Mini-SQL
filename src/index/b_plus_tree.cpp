@@ -10,23 +10,27 @@
 /**
  * TODO: Student Implement
  */
-BPlusTree::BPlusTree(index_id_t index_id, BufferPoolManager *buffer_pool_manager, const KeyManager &KM,
-                     int leaf_max_size, int internal_max_size)
-    : index_id_(index_id),
-      buffer_pool_manager_(buffer_pool_manager),
-      processor_(KM),
-      leaf_max_size_(leaf_max_size),
-      internal_max_size_(internal_max_size) {
-}
+BPlusTree::BPlusTree(index_id_t index_id, BufferPoolManager *buffer_pool_manager, const KeyManager &KM, int leaf_max_size, int internal_max_size)
+          : index_id_(index_id),
+            buffer_pool_manager_(buffer_pool_manager),
+            processor_(KM),
+            leaf_max_size_(leaf_max_size),
+            internal_max_size_(internal_max_size) {
+  if(leaf_max_size == 0);
 
+  
+}
+// 删除当前页
 void BPlusTree::Destroy(page_id_t current_page_id) {
+  buffer_pool_manager_->DeletePage(current_page_id);
 }
 
 /*
  * Helper function to decide whether current b+tree is empty
  */
 bool BPlusTree::IsEmpty() const {
-  return false;
+  // 根据页id判断即可
+  return root_page_id_ == INVALID_PAGE_ID;
 }
 
 /*****************************************************************************
@@ -37,7 +41,9 @@ bool BPlusTree::IsEmpty() const {
  * This method is used for point query
  * @return : true means key exists
  */
-bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) { return false; }
+bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) { 
+  auto *leaf = reinterpret_cast<LeafPage *>(FindLeafPage(key));
+}
 
 /*****************************************************************************
  * INSERTION
@@ -201,7 +207,20 @@ IndexIterator BPlusTree::End() {
  * Note: the leaf page is pinned, you need to unpin it after use.
  */
 Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool leftMost) {
-  return nullptr;
+  if(IsEmpty()) 
+    return nullptr;
+  // 抓取根节点，从根节点一直到叶子
+  Page *now_page = buffer_pool_manager_->FetchPage(root_page_id_);
+  page_id_t now_id = root_page_id_;
+  // 转成B+树页
+  BPlusTreePage *now_bpt_page = reinterpret_cast<BPlusTreePage *>(now_page->GetData());
+
+  while(!now_bpt_page->IsLeafPage()) {
+    // 关闭该页
+    buffer_pool_manager_->UnpinPage(now_id, false);
+    auto *in_bpt_page = reinterpret_cast<InternalPage *>(now_page);
+  }
+
 }
 
 /*
