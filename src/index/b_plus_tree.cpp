@@ -32,12 +32,12 @@ BPlusTree::BPlusTree(index_id_t index_id, BufferPoolManager *buffer_pool_manager
 }
 
 // 删除当前页
-void BPlusTree::Destroy(page_id_t current_page_id) {
-  buffer_pool_manager_->DeletePage(current_page_id);
+void BPlusTree::Destroy(page_id_t bpt_pageent_page_id) {
+  buffer_pool_manager_->DeletePage(bpt_pageent_page_id);
 }
 
 /*
- * Helper   function to decide whether current b+tree is empty
+ * Helper   function to decide whether bpt_pageent b+tree is empty
  */
 bool BPlusTree::IsEmpty() const {
   // 根据页id判断即可
@@ -74,7 +74,7 @@ bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn 
  *****************************************************************************/
 /*
  * Insert constant key & value pair into b+ tree
- * if current tree is empty, start new tree, update root page id and insert
+ * if bpt_pageent tree is empty, start new tree, update root page id and insert
  * entry, otherwise insert into leaf page.
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
@@ -212,7 +212,7 @@ void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlus
  *****************************************************************************/
 /*
  * Delete key & value pair associated with input key
- * If current tree is empty, return immediately.
+ * If bpt_pageent tree is empty, return immediately.
  * If not, User needs to first find the right leaf page as deletion target, then
  * delete entry from leaf page. Remember to deal with redistribute or merge if
  * necessary.
@@ -257,35 +257,29 @@ bool BPlusTree::CoalesceOrRedistribute(N *&node, Txn *transaction) {
   // true 则删除 node，false 则不删除
 
   if (node->IsRootPage()) return AdjustRoot(node);
-
-  page_id_t pre_id, node_id, next_id;
   BPlusTreeInternalPage *parent_page = reinterpret_cast<BPlusTreeInternalPage *>(buffer_pool_manager_->FetchPage(node->GetParentPageId())->GetData());
   N *pre_page, *next_page;
   int node_index = parent_page->ValueIndex(node->GetPageId());
 
   if(node_index > 0){   
     pre_page = reinterpret_cast<N *>(buffer_pool_manager_->FetchPage(parent_page->ValueAt(node_index - 1))->GetData());
-    if(pre_page->GetSize() > pre_page->GetMinSize()){   // case 1 可以redis
+    if(pre_page->GetSize() > pre_page->GetMinSize()){   // case 1 可以redis，从相邻的兄弟节点中拿来一个元素
       Redistribute(pre_page, node, 1);
       if (!node->IsLeafPage()) {
-        auto internal = reinterpret_cast<::InternalPage *>(node);
-
-        Page *currPage = buffer_pool_manager_->FetchPage(internal->GetPageId());
-        auto *curr = reinterpret_cast<BPlusTreePage *>(currPage->GetData());
-        InternalPage *internalPage;
-        while (!curr->IsLeafPage()) {//由于curr是由this转换过来的，所以至少可以进入一次
-          buffer_pool_manager_->UnpinPage(curr->GetPageId(), false);           // 每找一层关闭上一层的内节点page
-          internalPage = reinterpret_cast<::InternalPage *>(currPage);  // 打开上一层内节点page
-          currPage = buffer_pool_manager_->FetchPage(internalPage->ValueAt(0));  // 改变当前页的指针
-          curr = reinterpret_cast<BPlusTreePage *>(currPage->GetData());
+        InternalPage *tmp;
+        Page *now_page = buffer_pool_manager_->FetchPage(node->GetPageId());
+        BPlusTreePage *bpt_page = reinterpret_cast<BPlusTreePage *>(now_page->GetData());
+        while (!bpt_page->IsLeafPage()) {                                   // 向下循环找到叶子节点
+          buffer_pool_manager_->UnpinPage(bpt_page->GetPageId(), false);    // 关闭上一层
+          tmp = reinterpret_cast<::InternalPage *>(now_page);
+          now_page = buffer_pool_manager_->FetchPage(tmp->ValueAt(0));
+          bpt_page = reinterpret_cast<BPlusTreePage *>(now_page->GetData());
         }
-        buffer_pool_manager_->UnpinPage(curr->GetPageId(),false);
-        page_id_t answer_id = internalPage->ValueAt(0);
+        buffer_pool_manager_->UnpinPage(bpt_page->GetPageId(),false); // 关闭叶子
 
-        Page* leaf_page = buffer_pool_manager_->FetchPage(answer_id);
-        auto leaf = reinterpret_cast<::LeafPage*>(leaf_page);
-        parent_page->SetKeyAt(node_index,leaf->KeyAt(0));
-        buffer_pool_manager_->UnpinPage(leaf->GetPageId(),false);
+        BPlusTreeLeafPage * leaf_page = reinterpret_cast<BPlusTreeLeafPage *>(buffer_pool_manager_->FetchPage(tmp->ValueAt(0)));
+        parent_page->SetKeyAt(node_index,leaf_page->KeyAt(0));
+        buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(),false);
       }
       buffer_pool_manager_->UnpinPage(node->GetParentPageId(), true);
       buffer_pool_manager_->UnpinPage(parent_page->ValueAt(node_index - 1), true);
@@ -302,24 +296,20 @@ bool BPlusTree::CoalesceOrRedistribute(N *&node, Txn *transaction) {
     if (next_page->GetSize() > next_page->GetMinSize()) {   // case 3
       Redistribute(next_page, node, 0);
       if (!next_page->IsLeafPage()) {
-        auto internal = reinterpret_cast<::InternalPage *>(next_page);
-
-        Page *currPage = buffer_pool_manager_->FetchPage(internal->GetPageId());
-        auto *curr = reinterpret_cast<BPlusTreePage *>(currPage->GetData());
-        InternalPage *internalPage;
-        while (!curr->IsLeafPage()) {//由于curr是由this转换过来的，所以至少可以进入一次
-          buffer_pool_manager_->UnpinPage(curr->GetPageId(), false);           // 每找一层关闭上一层的内节点page
-          internalPage = reinterpret_cast<::InternalPage *>(currPage);  // 打开上一层内节点page
-          currPage = buffer_pool_manager_->FetchPage(internalPage->ValueAt(0));  // 改变当前页的指针
-          curr = reinterpret_cast<BPlusTreePage *>(currPage->GetData());
+        InternalPage *tmp;
+        Page *now_page = buffer_pool_manager_->FetchPage(next_page->GetPageId());
+        BPlusTreePage *bpt_page = reinterpret_cast<BPlusTreePage *>(now_page->GetData());
+        while (!bpt_page->IsLeafPage()) {                                   // 向下循环找到叶子节点
+          buffer_pool_manager_->UnpinPage(bpt_page->GetPageId(), false);    // 关闭上一层
+          tmp = reinterpret_cast<::InternalPage *>(now_page);
+          now_page = buffer_pool_manager_->FetchPage(tmp->ValueAt(0));
+          bpt_page = reinterpret_cast<BPlusTreePage *>(now_page->GetData());
         }
-        buffer_pool_manager_->UnpinPage(curr->GetPageId(),false);
+        buffer_pool_manager_->UnpinPage(bpt_page->GetPageId(),false); // 关闭叶子
 
-        page_id_t answer_id = internalPage->ValueAt(0);
-        Page* leaf_page = buffer_pool_manager_->FetchPage(answer_id);
-        auto leaf = reinterpret_cast<::LeafPage*>(leaf_page);
-        parent_page->SetKeyAt(node_index + 1,leaf->KeyAt(0));
-        buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+        BPlusTreeLeafPage * leaf_page = reinterpret_cast<BPlusTreeLeafPage *>(buffer_pool_manager_->FetchPage(tmp->ValueAt(0)));
+        parent_page->SetKeyAt(node_index,leaf_page->KeyAt(0));
+        buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(),false);
       }
     }else{                                              // case 4
       Coalesce(node, next_page, parent_page, node_index + 1, transaction);
@@ -502,7 +492,7 @@ Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool lef
  * header_page isdefined under include/page/header_page.h)
  * 每次改变根的id的时候都要调用
  * @parameter: insert_record      default value is false. When set to true,
- * insert a record <index_name, current_page_id> into header page instead of
+ * insert a record <index_name, bpt_pageent_page_id> into header page instead of
  * updating it.
  */
 void BPlusTree::UpdateRootPageId(int insert_record) {
