@@ -16,11 +16,19 @@ IndexIterator::~IndexIterator() {
 }
 
 std::pair<GenericKey *, RowId> IndexIterator::operator*() {
-  ASSERT(false, "Not implemented yet.");
+  return page->GetItem(item_index); // 前迭代器指向的索引项数据
 }
 
 IndexIterator &IndexIterator::operator++() {
-  ASSERT(false, "Not implemented yet.");
+  // 先检查到没到当前页最后了，如果到了，就unpin掉然后fetch下一页
+  if(item_index <= page->GetSize() - 1){
+    item_index++;
+  }else{
+    buffer_pool_manager->UnpinPage(current_page_id, false);
+    page = reinterpret_cast<BPlusTreeLeafPage *>(buffer_pool_manager->FetchPage(page->GetNextPageId()));
+    item_index = 0;
+  }
+  return *this;
 }
 
 bool IndexIterator::operator==(const IndexIterator &itr) const {
