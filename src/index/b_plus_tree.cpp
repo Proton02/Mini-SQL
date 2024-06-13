@@ -117,26 +117,29 @@ void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
  */
-// bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) { 
-//   // 找到右边叶节点 false
-//   RowId tmp;
-//   BPlusTreeLeafPage *insert_tar = reinterpret_cast<BPlusTreeLeafPage *>(FindLeafPage(key, false));
-//   bool is_exist = insert_tar->Lookup(key, tmp, processor_);
-//   int size = insert_tar->Insert(key, value, processor_);
-//   if(is_exist){ // 已经存在
-//     buffer_pool_manager_->UnpinPage(insert_tar->GetPageId(), false);
-//     return false;
-//   }else{  // 不存在，需要插入
-//     if(size > leaf_max_size_){
-//       BPlusTreeLeafPage *new_page = Split(insert_tar, transaction);
-//       InsertIntoParent(insert_tar, new_page->KeyAt(0), new_page, transaction);
-//     }else{
-//       buffer_pool_manager_->UnpinPage(insert_tar->GetPageId(), true);
-//     }
-//     return true;
-//   }
-// }
-
+bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) { 
+  // 找到右边叶节点 false
+  BPlusTreeLeafPage *insert_tar = reinterpret_cast<BPlusTreeLeafPage *>(FindLeafPage(key,root_page_id_, false)->GetData());
+  if(insert_tar->GetSize() >= leaf_max_size_){
+    BPlusTreeLeafPage *new_page = Split(insert_tar, transaction);
+    if (processor_.CompareKeys(key, new_page->KeyAt(0)) > 0) {
+      new_page->Insert(key, value, processor_);
+    } else {
+      insert_tar->Insert(key, value, processor_);
+    }
+    try {
+      InsertIntoParent(insert_tar, new_page->KeyAt(0), new_page, transaction);
+    } catch (...) {
+      throw("InsertIntoLeaf error");
+    }
+    buffer_pool_manager_->UnpinPage(new_page->GetPageId(), true);
+    buffer_pool_manager_->UnpinPage(insert_tar->GetPageId(), true);
+  }else{
+    insert_tar->Insert(key, value, processor_);
+    buffer_pool_manager_->UnpinPage(insert_tar->GetPageId(), true);
+  }
+  return true;
+}
 /*
  * Split input page and return newly created page.
  * Using template N to represent either internal page or leaf page.
