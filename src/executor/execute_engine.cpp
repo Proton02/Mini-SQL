@@ -17,6 +17,13 @@
 #include "planner/planner.h"
 #include "utils/utils.h"
 
+using namespace std;
+extern "C" {
+int yyparse(void);
+#include "parser/minisql_lex.h"
+#include "parser/parser.h"
+}
+
 ExecuteEngine::ExecuteEngine() {
   char path[] = "./databases";
   DIR *dir;
@@ -335,11 +342,71 @@ dberr_t ExecuteEngine::ExecuteShowTables(pSyntaxNode ast, ExecuteContext *contex
 /**
  * TODO: Student Implement
  */
+// 访问 ExecuteContext来实现表的修改
 dberr_t ExecuteEngine::ExecuteCreateTable(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteCreateTable" << std::endl;
 #endif
-  return DB_FAILED;
+  // 当前是否选择数据库？
+  if(current_db_.empty()){
+    return DB_FAILED;
+  }
+  // 获取表名 通过exec_ctx_获得Catalog调用GetTable()函数
+  CatalogManager *ct_manager = context->GetCatalog();
+  // 语法树列
+  // kNodeColumnDefinition,     column definition, contains column identifier and column type and UNIQUE constrain
+  SyntaxNode *curr_node = ast->child_->next_->child_;
+  vector<Column*> clm;
+  vector<string> pkey;  // primary
+  vector<string> ukey;  // unique
+  for(int idx = 0; !curr_node; curr_node = curr_node->next_){
+    bool uniq;
+    if(curr_node->val_ != nullptr && string(curr_node->val_) == "unique") uniq = true;
+    else uniq = false;
+    if(uniq) ukey.push_back(string(curr_node->child_->val_)); // column nmae;
+    // 列定义
+    if(curr_node->type_ == kNodeColumnDefinition){
+      // int类型
+      Column *clm_tmp;
+      if(curr_node->child_->next_->val_ == "int"){
+        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeInt, idx++, false, uniq);
+      }else if(curr_node->child_->next_->val_ == "char"){  // char类型 可以包含空值
+        int length = stoi(curr_node->child_->next_->child_->val_);
+        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeChar, length, idx++, true, uniq);
+      }else if(curr_node->child_->next_->val_ == "float"){  // float类型 可以包含空值
+        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeFloat, idx++, true, uniq);
+      }
+      clm.push_back(clm_tmp);
+    } // kNodeColumnDefinitionList, contains several column definitions
+    else if(curr_node->type_ == kNodeColumnList){
+      while(!curr_node->child_){  // 列节点
+        pkey.push_back(string(curr_node->child_->val_));
+        curr_node->child_ = curr_node->child_->next_;
+      }
+    }
+  }
+  // 根据解析后的语法树新建表，然后给pkey和ukey搞一个索引
+  Schema *schm = new Schema(clm);
+  string table_name = ast->child_->val_;
+  string idx_name;
+  TableInfo *tinfo;
+  IndexInfo *iinfo;
+  auto new_table = ct_manager->CreateTable(table_name, schm, context->GetTransaction(), tinfo);
+  if(new_table != DB_SUCCESS)
+    return new_table;
+  for(auto it:ukey){
+    idx_name = "UNIQUE_" + it + "_" + "ON_" + table_name;
+    ct_manager->CreateIndex(table_name, idx_name, ukey, context->GetTransaction(), iinfo, "btree");
+  }
+  if(pkey.size() > 0){
+    idx_name = "AUTO_CREATED_INDEX_OF_";
+    for(auto it:pkey){
+      idx_name += it + "_";
+    }
+    idx_name += "ON_" + table_name;
+    ct_manager->CreateIndex(table_name, idx_name, pkey, context->GetTransaction(), iinfo, "btree");
+  }
+  return new_table;
 }
 
 /**
@@ -349,7 +416,22 @@ dberr_t ExecuteEngine::ExecuteDropTable(pSyntaxNode ast, ExecuteContext *context
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteDropTable" << std::endl;
 #endif
- return DB_FAILED;
+  CatalogManager *ct_manager = context->GetCatalog();
+  string table_name = ast->child_->val_;
+  TableInfo *tinfo;
+  vector<IndexInfo *> idxs;
+  // 数据库为空，或者catalog中drop失败
+  if(current_db_.empty() | ct_manager->DropTable(table_name) == DB_FAILED){
+    return DB_FAILED;
+  }
+  int dberr = ct_manager->GetTableIndexes(table_name, idxs);
+  if(dberr == DB_SUCCESS){  // 多个索引
+    for(auto it:idxs){
+      dberr = ct_manager->DropIndex(table_name, it->GetIndexName());
+      if(dberr == DB_FAILED) return DB_FAILED;
+    }
+  }
+  return DB_SUCCESS;
 }
 
 /**
@@ -359,7 +441,37 @@ dberr_t ExecuteEngine::ExecuteShowIndexes(pSyntaxNode ast, ExecuteContext *conte
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteShowIndexes" << std::endl;
 #endif
-  return DB_FAILED;
+  if(current_db_.empty()){
+    return DB_FAILED;
+  }else{
+    CatalogManager *ct_manager = context->GetCatalog();
+    vector<TableInfo*> tinfo;
+    vector<IndexInfo*> iinfo;
+    ct_manager->GetTables(tinfo);
+    for(auto it:tinfo){
+      ct_manager->GetTableIndexes(it->GetTableName(), iinfo);
+    }
+    vector<int> width;
+    width.push_back(2); // 最小搞个2
+    stringstream ss;
+    ResultWriter writer(ss);
+    for(auto it:iinfo){
+      width[0] = width[0] >= stoi(it->GetIndexName()) ? width[0] : stoi(it->GetIndexName());
+    }
+    writer.Divider(width);
+    writer.BeginRow();
+    writer.WriteHeaderCell("Index", width[0]);
+    writer.EndRow();
+    writer.Divider(width);
+    for(auto it:iinfo){
+      writer.BeginRow();
+      writer.WriteCell(it->GetIndexName(), width[0]);
+      writer.EndRow();
+    }
+    writer.Divider(width);
+    std::cout<<writer.stream_.rdbuf();
+    return DB_SUCCESS;
+  }
 }
 
 /**
@@ -369,7 +481,21 @@ dberr_t ExecuteEngine::ExecuteCreateIndex(pSyntaxNode ast, ExecuteContext *conte
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteCreateIndex" << std::endl;
 #endif
-  return DB_FAILED;
+  if(current_db_.empty()){
+    return DB_FAILED;
+  }else{
+    CatalogManager *ct_manager = context->GetCatalog();
+    string idx_name = ast->child_->val_;
+    string table_name = ast->child_->next_->val_;
+    vector<string> idx_key;
+    SyntaxNode *curr_node = ast->child_->next_->child_;
+    // 从ast子节点开始依次提取idx和table名字
+    for(; !curr_node; curr_node = curr_node->next_){
+      idx_key.push_back(curr_node->val_);
+    }
+    IndexInfo *iinfo;
+    return ct_manager->CreateIndex(table_name, idx_name,idx_key, context->GetTransaction(), iinfo, "btree");
+  }
 }
 
 /**
@@ -379,7 +505,20 @@ dberr_t ExecuteEngine::ExecuteDropIndex(pSyntaxNode ast, ExecuteContext *context
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteDropIndex" << std::endl;
 #endif
-  return DB_FAILED;
+  if(current_db_.empty()){
+    return DB_FAILED;
+  }else{
+    CatalogManager *ct_manager = context->GetCatalog();
+    string idx_name = ast->child_->val_;
+    vector<TableInfo*> tinfo;
+    ct_manager->GetTables(tinfo);
+    for(auto t:tinfo){
+      int dberr = ct_manager->DropIndex(t->GetTableName(), idx_name);
+      if(dberr == DB_SUCCESS) 
+        return DB_SUCCESS;
+    }
+    return DB_FAILED;
+  }
 }
 
 dberr_t ExecuteEngine::ExecuteTrxBegin(pSyntaxNode ast, ExecuteContext *context) {
@@ -410,7 +549,40 @@ dberr_t ExecuteEngine::ExecuteExecfile(pSyntaxNode ast, ExecuteContext *context)
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteExecfile" << std::endl;
 #endif
-  return DB_FAILED;
+    string f_name = ast->child_->val_;
+  fstream file;
+  file.open(f_name);
+  if(!file.is_open()){
+    return DB_FAILED;
+  }else{
+    char command[1024]; // 缓冲区大小为 1024
+    size_t affected_row = 0;
+    double run_time = 0;
+    stringstream ss;
+    ResultWriter writer(ss);  // 格式化输出结果
+    while (!file.eof()){
+      memset(command, 0, 1024);
+      char curr_char;
+      for(int i = 0; !file.eof(); i++){
+        curr_char = file.get();
+        if(curr_char == ';')
+          break;
+        else
+          command[i] = curr_char;
+      }
+      // 创建缓冲区,把命令command搞到缓冲区
+      yy_buffer_state *buffer_pool = yy_scan_string(command);
+      MinisqlParserInit();  // 初始化parser
+      yyparse();  // 启动语法解析过程
+      auto execute_res = Execute(MinisqlGetParserRootNode());
+      MinisqlParserFinish();
+      yy_delete_buffer(buffer_pool);
+      yylex_destroy();
+    }
+    writer.EndInformation(affected_row, run_time, false);
+    cout << writer.stream_.rdbuf()<<endl;
+    return DB_SUCCESS;
+  }
 }
 
 /**
@@ -420,5 +592,6 @@ dberr_t ExecuteEngine::ExecuteQuit(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteQuit" << std::endl;
 #endif
- return DB_FAILED;
+  current_db_ = "";
+  return DB_QUIT;
 }
