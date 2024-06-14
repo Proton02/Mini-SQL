@@ -24,8 +24,8 @@ class TxnManager;
  */
 class LockManager {
 public:
-    enum class LockMode {
-        kNone, kShared, kExclusive
+    enum class LockMode { 
+      kNone, kShared, kExclusive 
     };
 
     /**
@@ -34,7 +34,7 @@ public:
     class LockRequest {
     public:
         LockRequest(txn_id_t txn_id, LockMode lock_mode)
-                : txn_id_(txn_id), lock_mode_(lock_mode), granted_(LockMode::kNone) {}
+            : txn_id_(txn_id), lock_mode_(lock_mode), granted_(LockMode::kNone) {}
 
         txn_id_t txn_id_{0};
         // The type of lock requested (e.g., shared or exclusive)
@@ -54,25 +54,25 @@ public:
         using ReqListType = std::list<LockRequest>;
 
         void EmplaceLockRequest(txn_id_t txn_id, LockMode lock_mode) {
-            req_list_.emplace_front(txn_id, lock_mode);
-            bool res = req_list_iter_map_.emplace(txn_id, req_list_.begin()).second;
-            assert(res);
+          req_list_.emplace_front(txn_id, lock_mode);
+          bool res = req_list_iter_map_.emplace(txn_id, req_list_.begin()).second;
+          assert(res);
         }
 
         bool EraseLockRequest(txn_id_t txn_id) {
-            auto iter = req_list_iter_map_.find(txn_id);
-            if (iter == req_list_iter_map_.end()) {
-                return false;
-            }
-            req_list_.erase(iter->second);   // erase lock request from req_list
-            req_list_iter_map_.erase(iter);  // erase iter from iter_map
-            return true;
+          auto iter = req_list_iter_map_.find(txn_id);
+          if (iter == req_list_iter_map_.end()) {
+            return false;
+          }
+          req_list_.erase(iter->second);   // erase lock request from req_list
+          req_list_iter_map_.erase(iter);  // erase iter from iter_map
+          return true;
         }
 
         ReqListType::iterator GetLockRequestIter(txn_id_t txn_id) {
-            auto iter = req_list_iter_map_.find(txn_id);
-            assert(iter != req_list_iter_map_.end());
-            return iter->second;
+          auto iter = req_list_iter_map_.find(txn_id);
+          assert(iter != req_list_iter_map_.end());
+          return iter->second;
         }
 
     public:
@@ -134,8 +134,8 @@ public:
     bool Unlock(Txn *txn, const RowId &rid);
 
     /*
-     * Add edge t1->t2 in the dependency graph
-     * */
+    * Add edge t1->t2 in the dependency graph
+    * */
     void AddEdge(txn_id_t t1, txn_id_t t2);
 
     /** Removes an edge from t1 -> t2. */
@@ -155,13 +155,13 @@ public:
     void RunCycleDetection();
 
     /*
-     * return the set of all edges in the graph, used for testing only!
-     * */
+    * return the set of all edges in the graph, used for testing only!
+    * */
     std::vector<std::pair<txn_id_t, txn_id_t>> GetEdgeList();
 
     inline void EnableCycleDetection(std::chrono::milliseconds &interval) {
-        enable_cycle_detection_ = true;
-        cycle_detection_interval_ = interval;
+      enable_cycle_detection_ = true;
+      cycle_detection_interval_ = interval;
     }
 
     inline void DisableCycleDetection() { enable_cycle_detection_ = false; }
@@ -170,6 +170,8 @@ private:
     void LockPrepare(Txn *txn, const RowId &rid);
 
     void CheckAbort(Txn *txn, LockRequestQueue &req_queue);
+
+    bool DFS(txn_id_t txn_id);
 
 private:
     /** Lock table for lock requests. */

@@ -7,86 +7,70 @@
  * TODO: Student Implement
  */
 TableIterator::TableIterator(TableHeap *table_heap, RowId rid, Txn *txn) {
-  this->table_heap = table_heap;
-  this->cur_row = new Row(rid);
-  txn = nullptr;
+  row_.SetRowId(rid);
+  if (table_heap->GetTuple(&row_, txn)) {
+    table_heap_ = table_heap;
+    txn_ = txn;
+  }
 }
+
 TableIterator::TableIterator(const TableIterator &other) {
-  this->table_heap = other.table_heap;
-  this->cur_row = other.cur_row;
-  this->txn = other.txn;
+  table_heap_ = other.table_heap_;
+  row_ = other.row_;
+  txn_ = other.txn_;
 }
 
-TableIterator::~TableIterator() {
-
+TableIterator::TableIterator(TableIterator &other) {
+  table_heap_ = other.table_heap_;
+  row_ = other.row_;
+  txn_ = other.txn_;
 }
+
+TableIterator::~TableIterator() {}
 
 bool TableIterator::operator==(const TableIterator &itr) const {
-  if(this->table_heap == itr.table_heap && this->cur_row == itr.cur_row) {
+  if (table_heap_ == nullptr && itr.table_heap_ == nullptr) {
     return true;
   }
-  return false;
+  return table_heap_ == itr.table_heap_ && row_.GetRowId() == itr.row_.GetRowId();
 }
 
 bool TableIterator::operator!=(const TableIterator &itr) const {
-  if(this->table_heap == itr.table_heap && this->cur_row == itr.cur_row) {
+  if (table_heap_ == nullptr && itr.table_heap_ == nullptr) {
     return false;
   }
-  return true;
+  return !(table_heap_ == itr.table_heap_ && row_.GetRowId() == itr.row_.GetRowId());
 }
 
 const Row &TableIterator::operator*() {
-  // ASSERT(false, "Not implemented yet.");
-  // 该函数返回当前迭代器指向的Row对象
-  return *cur_row;
+  return row_;
 }
 
 Row *TableIterator::operator->() {
-  // 该函数返回当前迭代器指向的Row对象的指针
-  return cur_row;
+  return &row_;
 }
 
 TableIterator &TableIterator::operator=(const TableIterator &itr) noexcept {
-  // 该函数实现迭代器的赋值操作
-  // 1. 将itr的table_heap和cur_row_id赋值给当前迭代器
-  // 2. 返回当前迭代器
-  this->table_heap = itr.table_heap;
-  this->cur_row = itr.cur_row;
-  this->txn = itr.txn;
-
+  table_heap_ = itr.table_heap_;
+  row_ = itr.row_;
+  txn_ = itr.txn_;
   return *this;
 }
 
 // ++iter
 TableIterator &TableIterator::operator++() {
-  if(table_heap == nullptr) {
-    LOG(ERROR) <<"mistake" <<std::endl;
-  }
-  auto page = reinterpret_cast<TablePage *>(table_heap->buffer_pool_manager_->FetchPage(cur_row->GetRowId().GetPageId()));
-  RowId next_rowid;
-  if(page->GetNextTupleRid(cur_row->GetRowId(),&next_rowid)){
-    cur_row->SetRowId(next_rowid);
-    table_heap->GetTuple(cur_row, nullptr);
-    table_heap->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+  if(table_heap_->GetNextTuple(row_, row_, txn_)) {
+    return *this;
+  } else {
+    table_heap_ = nullptr;
+    txn_ = nullptr;
     return *this;
   }
-  table_heap->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
-  while(page->GetNextPageId() != INVALID_PAGE_ID) {
-    page = reinterpret_cast<TablePage *>(table_heap->buffer_pool_manager_->FetchPage(page->GetNextPageId()));
-    if(page->GetNextTupleRid(cur_row->GetRowId(),&next_rowid)){
-      cur_row->SetRowId(next_rowid);
-      table_heap->GetTuple(cur_row, nullptr);
-      table_heap->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
-      return *this;
-    }
-    table_heap->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
-  }
-  cur_row->SetRowId(RowId(INVALID_PAGE_ID));
-  return *this;
 }
 
 // iter++
 TableIterator TableIterator::operator++(int) {
-  ++(*this);
-  return TableIterator(*this);
+  TableIterator temp(*this);
+  ++*this;
+  return temp;
 }

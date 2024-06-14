@@ -1,5 +1,22 @@
 #include "record/row.h"
 
+
+// #define MACH_WRITE_TO(Type, Buf, Data) \
+// do { \
+// *reinterpret_cast<Type *>(Buf) = (Data); \
+// } while (0)
+// #define MACH_WRITE_UINT32(Buf, Data) MACH_WRITE_TO(uint32_t, (Buf), (Data))
+// #define MACH_WRITE_INT32(Buf, Data) MACH_WRITE_TO(int32_t, (Buf), (Data))
+// #define MACH_WRITE_STRING(Buf, Str)      \
+// do {                                       \
+// memcpy(Buf, Str.c_str(), Str.length()); \
+// } while (0)
+//
+// #define MACH_READ_FROM(Type, Buf) (*reinterpret_cast<const Type *>(Buf))
+// #define MACH_READ_UINT32(Buf) MACH_READ_FROM(uint32_t, (Buf))
+// #define MACH_READ_INT32(Buf) MACH_READ_FROM(int32_t, (Buf))
+//
+// #define MACH_STR_SERIALIZED_SIZE(Str) (4 + Str.length())
 /**
  * TODO: Student Implement
  */
@@ -17,115 +34,71 @@
 uint32_t Row::SerializeTo(char *buf, Schema *schema) const {
   ASSERT(schema != nullptr, "Invalid schema before serialize.");
   ASSERT(schema->GetColumnCount() == fields_.size(), "Fields size do not match schema's column size.");
-  // replace with your code here
   // 1. row由一个或多个Field构成，每个Field对应一个Column，Field的序列化格式为Column的序列化格式
   // 先计算field的数量，再计算null bitmap的大小（要求向上取字节）
-  uint32_t field_num = schema->GetColumnCount();
-  uint32_t null_bitmap_size = (field_num + 7) / 8;
+  uint32_t field_nums = schema->GetColumnCount();
+  uint32_t null_bitmap_size = (field_nums + 7) / 8;
   // 使用size记录序列化过程中指针buf向后移动的字节数
   uint32_t size = 0;
   // 2. 先计算header的序列化格式
   // 2.1. 先序列化field的数量
-  memcpy(buf, &field_num, sizeof(uint32_t));
-  size += sizeof(uint32_t);
-  if(field_num == 0) {
-    return size;
-  }
+  MACH_WRITE_TO(uint32_t, buf + size, field_nums);
+  size += sizeof(field_nums);
   // 2.2. 再序列化null bitmap
-  char *null_bitmap = buf + size;
   // 初始化null bitmap，将所有位都设为0，表示所有field都不为空
-  memset(null_bitmap, 0, null_bitmap_size);
-  size += null_bitmap_size;
-  // 3. 再计算field的序列化格式
-  for(uint32_t i = 0; i < field_num; i++) {
-    // 3.1. 先序列化null bitmap
-    // 检查fields_[i]是否为空，如果为空，将null bitmap的第i位设为1
-    if(fields_[i] == nullptr) {
-      null_bitmap[i/8] = null_bitmap[i/8] | (1 << (7 - (i % 8)));
+  // 检查fields_[i]是否为空，如果为空，将null bitmap的第i位设为1
+  char temp = 0;
+  uint32_t cnt = 0;
+  for (uint32_t i = 0; i < null_bitmap_size; i++) {
+    for (int j = 0; j < 8; j++) {
+      char mask = 0;
+      temp <<= 1;
+      if (cnt < field_nums) {
+        mask = fields_[cnt]->IsNull() ? 1 : 0;
+      }
+      temp |= mask;
+      cnt++;
     }
-    else {
-      // inline uint32_t SerializeTo(char *buf) const { return Type::GetInstance(type_id_)->SerializeTo(*this, buf); }
+    MACH_WRITE_TO(char, buf + size, temp);
+    size += sizeof(char);
+    temp = 0;
+  }
+  // 3. 再序列化field的序列化格式
+  for (uint32_t i = 0; i < field_nums; i++) {
+    if (!fields_[i]->IsNull()) {
       size += fields_[i]->SerializeTo(buf + size);
     }
   }
-  // delete []null_bitmap;
   return size;
 }
 
 uint32_t Row::DeserializeFrom(char *buf, Schema *schema) {
   ASSERT(schema != nullptr, "Invalid schema before serialize.");
   ASSERT(fields_.empty(), "Non empty field in row.");
-  // replace with your code here
+  uint32_t schema_nums = schema->GetColumnCount();
   uint32_t size = 0;
   // 1. 先反序列化header
-  uint32_t field_num = 0;
   // 1.1. 先反序列化field的数量
-  memcpy(&field_num, buf+size, sizeof(uint32_t));
+  uint32_t field_nums = MACH_READ_FROM(uint32_t, buf + size);
   size += sizeof(uint32_t);
-  if(field_num == 0) {
-    return size;
-  }
+  ASSERT(field_nums == schema_nums, "The total num of buf does not match");
   // 1.2. 再反序列化null bitmap
-  uint32_t null_bitmap_size = (field_num + 7) / 8;
-  char *null_bitmap = new char[null_bitmap_size];
-  // 读取buf中的bull_bitmap
-  memcpy(null_bitmap, buf+size, null_bitmap_size * sizeof(char));
-  size += null_bitmap_size * sizeof(char);
-  // 2. 再反序列化field的序列化格式
-  for(uint32_t i = 0; i < field_num; i++) {
-    // 2.1 首先得知道读取的field的类型是什么
-    TypeId type = schema->GetColumn(i)->GetType();
-    // 根据null_bitmap判断当前的field_[i]是否为空
-    // 1表示为空，0表示不为空
-    if((null_bitmap[i/8] & (1 << (7- (i % 8)))) == 0) {
-      // explicit Field(TypeId type, int32_t i) : type_id_(type) {
-      //   ASSERT(type == TypeId::kTypeInt, "Invalid type.");
-      //   value_.integer_ = i;
-      //   len_ = Type::GetTypeSize(type);
-      // }
-      if(type == TypeId::kTypeInt) {
-        int32_t row_value = 0;
-        // 从buf+size中读取row_value，然后构建新的field
-        memcpy(&row_value, buf+size, sizeof(int32_t));
-        size += sizeof(int32_t);
-        fields_.emplace_back(new Field(type, row_value));
-      }
-      // explicit Field(TypeId type, float f) : type_id_(type) {
-      //   ASSERT(type == TypeId::kTypeFloat, "Invalid type.");
-      //   value_.float_ = f;
-      //   len_ = Type::GetTypeSize(type);
-      // }
-      else if(type == TypeId::kTypeFloat) {
-        float row_value = 0;
-        memcpy(&row_value, buf+size, sizeof(float));
-        size += sizeof(float);
-        fields_.emplace_back(new Field(type, row_value));
-      }
-      // explicit Field(TypeId type, char *data, uint32_t len, bool manage_data)
-      // char类型需要4个参数，
-      else {
-        // 不定长字符串，先读取长度，再读取数据
-        uint32_t len = 0;
-        memcpy(&len, buf+size, sizeof(uint32_t));
-        size += sizeof(uint32_t);
-        // 读取字符串的内容
-        char *value = new char[len];
-        memcpy(value, buf+size, len);
-        size += len;
-        fields_.emplace_back(new Field(type, value, len, true));
-        delete[] value;
-      }
+  std::vector<bool> isnull(field_nums);
+  char mask = 1 << 7;
+  char temp;
+  for (uint32_t i = 0; i < field_nums; i++) {
+    if (i % 8 == 0) {
+      temp = MACH_READ_FROM(char, buf + size);
+      size += sizeof(char);
     }
-    else {
-      fields_.emplace_back(nullptr);
-    }
+    isnull[i] = mask & temp;
+    temp <<= 1;
   }
-  delete[] null_bitmap;
+  fields_.resize(field_nums);
+  for (uint32_t i = 0; i < field_nums; i++) {
+    size += fields_[i]->DeserializeFrom(buf + size, schema->GetColumn(i)->GetType(), &fields_[i], isnull[i]);
+  }
   return size;
-<<<<<<< HEAD
-
-=======
->>>>>>> dbf6a3607a31ed04099eef56eb91a0295d8766e9
 }
 
 uint32_t Row::GetSerializedSize(Schema *schema) const {
@@ -134,14 +107,13 @@ uint32_t Row::GetSerializedSize(Schema *schema) const {
   // replace with your code here
   // 1. header的size包含field_num + null_bitmap_size
   uint32_t size = 0;
+  uint32_t field_nums = fields_.size();
   size += sizeof(uint32_t);
-  uint32_t field_num = schema->GetColumnCount();
-  size += (field_num + 7) / 8;
+  size += (field_nums + 7) / 8;
   // 2. 再计算field的size
-  for(uint32_t i = 0; i < field_num; i++) {
-    if(fields_[i] != nullptr) {
-      size += fields_[i]->GetSerializedSize();
-    }
+  for(int i = 0;i < field_nums;i++)
+  {
+    size += fields_[i]->GetSerializedSize();
   }
   return size;
 }

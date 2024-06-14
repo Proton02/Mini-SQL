@@ -9,6 +9,9 @@
 #include "buffer/replacer.h"
 #include "common/config.h"
 
+#include <list>
+#include <unordered_map>
+
 using namespace std;
 
 /**
@@ -36,11 +39,11 @@ class LRUReplacer : public Replacer {
   size_t Size() override;
 
 private:
-  // add your own private member variables here
-  // victims用于存储可以被替换的页的页帧号，尾部存储最近最少使用的页id，头部存储最近最多使用的页id
-  list<frame_id_t> victims;
-  // num_pages表示LRUReplacer需要存储的最大页数
-  size_t num_pages;
+ // add your own private member variables here
+ // victims用于存储可以被替换的页的页帧号，尾部存储最近最少使用的页id，头部存储最近最多使用的页id
+ list<frame_id_t> victims;
+ // num_pages表示LRUReplacer需要存储的最大页数
+ size_t num_pages;
 };
 
 #endif  // MINISQL_LRU_REPLACER_H

@@ -63,20 +63,14 @@ class IndexInfo {
 /**
  * TODO: Student Implement
  */
- // IndexInfo::Init(*index_meta_data, *table_info, *buffer_pool_manager):
- // 传入事先创建好的IndexMetadata和从CatalogManager中获取到的TableInfo，
- // 创建索引本身的key_schema_和Index对象。这里的key_schema_可以通过Schema::ShallowCopySchema来创建，
- // 且key_schema_中包含的列与TableSchema中的列共享同一份存储。
   void Init(IndexMetadata *meta_data, TableInfo *table_info, BufferPoolManager *buffer_pool_manager) {
     // Step1: init index metadata and table info
-   meta_data_ = meta_data;
-   table_info_ = table_info;
-   // Step2: mapping index key to key schema
-   // static Schema *ShallowCopySchema(const Schema *table_schema, const std::vector<uint32_t> & attrs)
-   key_schema_ = Schema::ShallowCopySchema(table_info_->GetSchema(), meta_data_->GetKeyMapping() );
-   // Step3: call CreateIndex to create the index
-   // Index *CreateIndex(BufferPoolManager *buffer_pool_manager, const string & index_type)
-   index_ = CreateIndex(buffer_pool_manager, "bptree");
+    // Step2: mapping index key to key schema
+    // Step3: call CreateIndex to create the index
+    //ASSERT(false, "Not Implemented yet.");
+    meta_data_=meta_data;
+    key_schema_=Schema::ShallowCopySchema(table_info->GetSchema(), meta_data->GetKeyMapping());
+    index_= CreateIndex(buffer_pool_manager, "bptree");
   }
 
   inline Index *GetIndex() { return index_; }
@@ -94,7 +88,6 @@ class IndexInfo {
   IndexMetadata *meta_data_;
   Index *index_;
   IndexSchema *key_schema_;
-  TableInfo *table_info_;
 };
 
 #endif  // MINISQL_INDEXES_H

@@ -47,7 +47,7 @@ class TableHeap {
    * @param[in] txn Txn performing the update
    * @return true is update is successful.
    */
-  bool UpdateTuple(Row &row, const RowId &rid, Txn *txn);
+  bool UpdateTuple(const Row &row, const RowId &rid, Txn *txn);
 
   /**
    * Called on Commit/Abort to actually delete a tuple or rollback an insert.
@@ -62,6 +62,15 @@ class TableHeap {
    * @param[in] txn Txn performing the rollback
    */
   void RollbackDelete(const RowId &rid, Txn *txn);
+
+  /**
+   * Get the next tuple in the table.
+   * @param[in] row Current row, row id of the tuple is wrapped in row
+   * @param[out] next_row Next row, row id of the tuple is wrapped in next_row
+   * @param[in] txn recovery performing the read
+   * @return true if the read was successful (i.e. the tuple exists)
+   */
+  bool GetNextTuple(const Row &row, Row &next_row, Txn *txn);
 
   /**
    * Read a tuple from the table.
@@ -113,15 +122,7 @@ class TableHeap {
         schema_(schema),
         log_manager_(log_manager),
         lock_manager_(lock_manager) {
-   page_id_t new_page_id;
-   buffer_pool_manager_->NewPage(new_page_id);
-   first_page_id_ = new_page_id;
-   auto new_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(new_page_id));
-   new_page->WLatch();
-   new_page->Init(new_page_id,INVALID_PAGE_ID,log_manager,txn);
-   new_page->SetNextPageId(INVALID_PAGE_ID);
-   new_page->WUnlatch();
-   buffer_pool_manager_->UnpinPage(new_page->GetPageId(), true);
+    first_page_id_=INVALID_PAGE_ID;
   };
 
   explicit TableHeap(BufferPoolManager *buffer_pool_manager, page_id_t first_page_id, Schema *schema,

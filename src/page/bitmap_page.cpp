@@ -2,6 +2,9 @@
 
 #include "glog/logging.h"
 
+/**
+ * TODO: Student Implement
+ */
 // static constexpr size_t MAX_CHARS = PageSize - 2 * sizeof(uint32_t);
 // 对应信息，除去元信息外，页中剩余的部分就是Bitmap存储的具体数据，其大小BITMAP_CONTENT_SIZE可以通过PAGE_SIZE - BITMAP_PAGE_META_SIZE来计算
 // 一个bitmap page能够支持最多 BITMAP_CONTENT_SIZE * 8 个页的分配
@@ -32,7 +35,6 @@ bool BitmapPage<PageSize>::AllocatePage(uint32_t &page_offset) {
   page_allocated_ += 1;
   return true;
 }
-
 
 /**
  * TODO: Student Implement
@@ -70,7 +72,9 @@ bool BitmapPage<PageSize>::IsPageFree(uint32_t page_offset) const {
 
 template <size_t PageSize>
 bool BitmapPage<PageSize>::IsPageFreeLow(uint32_t byte_index, uint8_t bit_index) const {
-  return ((bytes[byte_index] & (1 << bit_index)) == 0);
+  //return false;
+  // Check if the bit is free
+  return (bytes[byte_index] & (1 << bit_index)) == 0;
 }
 
 template class BitmapPage<64>;
@@ -86,3 +90,4 @@ template class BitmapPage<1024>;
 template class BitmapPage<2048>;
 
 template class BitmapPage<4096>;
+

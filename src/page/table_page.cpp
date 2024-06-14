@@ -62,7 +62,7 @@ bool TablePage::MarkDelete(const RowId &rid, Txn *txn, LockManager *lock_manager
   return true;
 }
 
-bool TablePage::UpdateTuple(Row &new_row, Row *old_row, Schema *schema, Txn *txn, LockManager *lock_manager,
+bool TablePage::UpdateTuple(const Row &new_row, Row *old_row, Schema *schema, Txn *txn, LockManager *lock_manager,
                             LogManager *log_manager) {
   ASSERT(old_row != nullptr && old_row->GetRowId().Get() != INVALID_ROWID.Get(), "invalid old row.");
   uint32_t serialized_size = new_row.GetSerializedSize(schema);
@@ -177,6 +177,8 @@ bool TablePage::GetFirstTupleRid(RowId *first_rid) {
 }
 
 bool TablePage::GetNextTupleRid(const RowId &cur_rid, RowId *next_rid) {
+  if(cur_rid.GetPageId() == INVALID_PAGE_ID) return GetFirstTupleRid(next_rid);
+  ASSERT(GetTablePageId()!=INVALID_PAGE_ID,"empty page");
   ASSERT(cur_rid.GetPageId() == GetTablePageId(), "Wrong table!");
   // Find and return the first valid tuple after our current slot number.
   for (auto i = cur_rid.GetSlotNum() + 1; i < GetTupleCount(); i++) {
@@ -189,3 +191,4 @@ bool TablePage::GetNextTupleRid(const RowId &cur_rid, RowId *next_rid) {
   next_rid->Set(INVALID_PAGE_ID, 0);
   return false;
 }
+

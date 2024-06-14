@@ -1,20 +1,5 @@
 #include "catalog/table.h"
-// #define MACH_WRITE_TO(Type, Buf, Data) \
-// do { \
-// *reinterpret_cast<Type *>(Buf) = (Data); \
-// } while (0)
-// #define MACH_WRITE_UINT32(Buf, Data) MACH_WRITE_TO(uint32_t, (Buf), (Data))
-// #define MACH_WRITE_INT32(Buf, Data) MACH_WRITE_TO(int32_t, (Buf), (Data))
-// #define MACH_WRITE_STRING(Buf, Str)      \
-// do {                                       \
-// memcpy(Buf, Str.c_str(), Str.length()); \
-// } while (0)
-//
-// #define MACH_READ_FROM(Type, Buf) (*reinterpret_cast<const Type *>(Buf))
-// #define MACH_READ_UINT32(Buf) MACH_READ_FROM(uint32_t, (Buf))
-// #define MACH_READ_INT32(Buf) MACH_READ_FROM(int32_t, (Buf))
-//
-// #define MACH_STR_SERIALIZED_SIZE(Str) (4 + Str.length())
+
 uint32_t TableMetadata::SerializeTo(char *buf) const {
   char *p = buf;
   uint32_t ofs = GetSerializedSize();
@@ -43,7 +28,9 @@ uint32_t TableMetadata::SerializeTo(char *buf) const {
  * TODO: Student Implement
  */
 uint32_t TableMetadata::GetSerializedSize() const {
-  return 4 + 4 + MACH_STR_SERIALIZED_SIZE(table_name_) + 4 + schema_->GetSerializedSize();
+  //return 4 + 4 + MACH_STR_SERIALIZED_SIZE(table_name_) + 4 + schema_->GetSerializedSize();
+  // return sizeof(TABLE_METADATA_MAGIC_NUM) + sizeof(table_id_) + table_name_.length()+ sizeof(table_name_.length()) + sizeof(root_page_id_)+schema_->GetSerializedSize();
+  return table_name_.length()+16+schema_->GetSerializedSize();
 }
 
 /**

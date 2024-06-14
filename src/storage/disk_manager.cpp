@@ -8,6 +8,7 @@
 #include "glog/logging.h"
 #include "page/bitmap_page.h"
 
+
 DiskManager::DiskManager(const std::string &db_file) : file_name_(db_file) {
   std::scoped_lock<std::recursive_mutex> lock(db_io_latch_);
   db_io_.open(db_file, std::ios::binary | std::ios::in | std::ios::out);
@@ -161,7 +162,6 @@ page_id_t DiskManager::MapPageId(page_id_t logical_page_id) {
   uint32_t extent_id = logical_page_id / BITMAP_SIZE;
   return extent_id * (BITMAP_SIZE + 1) + 1 + offset + 1;
 }
-
 int DiskManager::GetFileSize(const std::string &file_name) {
   struct stat stat_buf;
   int rc = stat(file_name.c_str(), &stat_buf);

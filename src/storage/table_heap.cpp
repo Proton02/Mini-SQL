@@ -3,7 +3,6 @@
 /**
  * TODO: Student Implement
  */
-
 /**
  * Insert a tuple into the table. If the tuple is too large (>= page_size), return false.
  * @param[in/out] row Tuple Row to insert, the rid of the inserted tuple is wrapped in object row
@@ -11,49 +10,64 @@
  * @return true iff the insert is successful
  */
 bool TableHeap::InsertTuple(Row &row, Txn *txn) {
-  //If the tuple is too large (>= page_size), return false.
+  // 1. If the tuple is too large (>= page_size), return false.
   uint32_t tuple_size = row.GetSerializedSize(schema_);
-  if (tuple_size >= PAGE_SIZE) {
+  if (tuple_size > PAGE_SIZE) {
     return false;
   }
-  // Find the page which contains the tuple.
-  for(page_id_t id = GetFirstPageId(); id != INVALID_PAGE_ID; ) {
-    auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(id));
-    // 给当前的page上锁
-    page->WLatch();
-    // 如果该page能够插入tuple
-    if(page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_)) {
+  // 2. Find the page which contains the tuple.
+  page_id_t page_id = first_page_id_;
+  page_id_t prev_page_id = INVALID_PAGE_ID;
+  // TablePage *page = reinterpret_cast<TablePage *>(buffer_pool_manager_->NewPage(page_id));
+  bool is_sucess = false;
+  while (!is_sucess) {
+    // 如果page_id为INVALID_PAGE_ID，说明需要新建一个page
+    if (page_id == INVALID_PAGE_ID) {
+      // 新建一个page，page_id为新建的page的id
+      buffer_pool_manager_->NewPage(page_id);
+      // 通过page_id获取page
+      auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(page_id));
+      if (page == nullptr) {
+        return false;
+      }
+      // 对新建的page进行上锁，write lock
+      page->WLatch();
+      page->Init(page_id, prev_page_id, log_manager_, txn);
+      is_sucess = page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_);
+      // 更新first_page_id_ 和 next_page_id
+      // 如果prev_page_id为INVALID_PAGE_ID，说明是第一个page
+      if (prev_page_id == INVALID_PAGE_ID) {
+        first_page_id_ = page_id;
+      } else {
+        // 如果不是第一个page，需要更新prev_page_id的next_page_id
+        auto prev_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(prev_page_id));
+        prev_page->WLatch();
+        prev_page->SetNextPageId(page_id);
+        prev_page->WUnlatch();
+        buffer_pool_manager_->UnpinPage(prev_page_id, true);
+      }
+      page->WUnlatch();
+      buffer_pool_manager_->UnpinPage(page_id, true);
+      break;
+    }
+    // 如果page_id不为INVALID_PAGE_ID，说明page已经存在
+    else {
+      auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(page_id));
+      if (page == nullptr) {
+        return false;
+      }
+      page->WLatch();
+      is_sucess = page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_);
+      // 更新prev_page_id 和 page_id
+      prev_page_id = page_id;
+      page_id = page->GetNextPageId();
       page->WUnlatch();
       buffer_pool_manager_->UnpinPage(page->GetTablePageId(), true);
-      return true;
-    }
-    // 如果该page不能插入该tuple
-    page->WUnlatch();
-    // dirty bit = false 表示没有发生修改
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
-    // 检查下一个page
-    page_id_t prev_page_id = id;
-    id = page->GetNextPageId();
-    if(id == INVALID_PAGE_ID) {
-      // 此时需要新建一个page
-      page_id_t new_page_id;
-      auto new_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->NewPage(new_page_id));
-      // 对当前新建的page和旧page进行上锁
-      new_page->WLatch();
-      page->WLatch();
-      // 初始化newpage
-      new_page->Init(new_page_id, prev_page_id, log_manager_, txn);
-      // 利用nextpageid进行判断，需将最后一个page的nextpage的id设置为INVAILD_PAGE_ID
-      new_page->SetNextPageId(INVALID_PAGE_ID);
-      page->SetNextPageId(new_page_id);
-      page->WUnlatch();
-      new_page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(new_page->GetTablePageId(), true);
-      id = new_page->GetPageId();
     }
   }
-  return false;
+  return is_sucess;
 }
+
 /**
  * Mark the tuple as deleted. The actual delete will occur when ApplyDelete is called.
  * @param[in] rid Resource id of the tuple of delete
@@ -85,7 +99,7 @@ bool TableHeap::MarkDelete(const RowId &rid, Txn *txn) {
  * @param[in] txn Txn performing the update
  * @return true is update is successful.
  */
-bool TableHeap::UpdateTuple(Row &row, const RowId &rid, Txn *txn) {
+bool TableHeap::UpdateTuple(const Row &row, const RowId &rid, Txn *txn) {
   // if the new tuple is too large to fit in the old page, return false (will delete and insert)
   if(row.GetSerializedSize(schema_) > PAGE_SIZE) {
     return false;
@@ -94,8 +108,7 @@ bool TableHeap::UpdateTuple(Row &row, const RowId &rid, Txn *txn) {
   old_page->WLatch();
   Row old_row = Row(rid);
   //  old_page->GetTuple(&old_row,schema_,txn,lock_manager_);只要有rid就行
-  bool update_result = old_page->UpdateTuple(row,&old_row,schema_,txn,lock_manager_,log_manager_);
-  //要求old_row的field是空的
+  bool update_result = old_page->UpdateTuple(row, &old_row, schema_, txn, lock_manager_, log_manager_);
   old_page->WUnlatch();
   buffer_pool_manager_->UnpinPage(old_page->GetPageId(), true);
   return update_result;
@@ -113,14 +126,13 @@ void TableHeap::ApplyDelete(const RowId &rid, Txn *txn) {
   // Step1: Find the page which contains the tuple.
   auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(rid.GetPageId()));
   if(page == nullptr) {return;}
+  assert(page != nullptr);
   // Step2: Delete the tuple from the page.
   page->WLatch();
-  page->ApplyDelete(rid, txn,log_manager_);
+  page->ApplyDelete(rid, txn, log_manager_);
   page->WUnlatch();
   buffer_pool_manager_->UnpinPage(page->GetTablePageId(), true);
-  // Step2: Delete the tuple from the page.
 }
-
 /**
  * Called on abort to rollback a delete.
  * @param[in] rid Rid of the deleted tuple.
@@ -147,6 +159,8 @@ void TableHeap::RollbackDelete(const RowId &rid, Txn *txn) {
  * @return true if the read was successful (i.e. the tuple exists)
  */
 bool TableHeap::GetTuple(Row *row, Txn *txn) {
+  RowId rid = row->GetRowId();
+  if (rid == INVALID_ROWID) return false;
   auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(row->GetRowId().GetPageId()));
   if(page == nullptr) {return false;}
   page->RLatch();
@@ -159,8 +173,7 @@ bool TableHeap::GetTuple(Row *row, Txn *txn) {
 void TableHeap::DeleteTable(page_id_t page_id) {
   if (page_id != INVALID_PAGE_ID) {
     auto temp_table_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(page_id));  // 删除table_heap
-    if (temp_table_page->GetNextPageId() != INVALID_PAGE_ID)
-      DeleteTable(temp_table_page->GetNextPageId());
+    if (temp_table_page->GetNextPageId() != INVALID_PAGE_ID) DeleteTable(temp_table_page->GetNextPageId());
     buffer_pool_manager_->UnpinPage(page_id, false);
     buffer_pool_manager_->DeletePage(page_id);
   } else {
@@ -168,22 +181,57 @@ void TableHeap::DeleteTable(page_id_t page_id) {
   }
 }
 
+bool TableHeap::GetNextTuple(const Row &row, Row &next_row, Txn *txn) {
+  RowId rid = row.GetRowId();
+  page_id_t page_id = rid.GetPageId();
+  bool is_get = false;
+  while (!is_get) {
+    if (page_id == INVALID_PAGE_ID) return false;
+    auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(page_id));
+    ASSERT(page != nullptr, "page is nullptr , page_id is wrong");
+    page->RLatch();
+    if (page->GetNextTupleRid(rid, &rid)) {
+      is_get = true;
+      next_row.destroy();
+      next_row.SetRowId(rid);
+      page->GetTuple(&next_row, schema_, txn, lock_manager_);
+      page->RUnlatch();
+      buffer_pool_manager_->UnpinPage(page->GetTablePageId(), false);
+    } else {
+      page->RUnlatch();
+      buffer_pool_manager_->UnpinPage(page->GetTablePageId(), false);
+      page_id = page->GetNextPageId();
+    }
+  }
+  return is_get;
+}
+
 /**
  * TODO: Student Implement
  */
 TableIterator TableHeap::Begin(Txn *txn) {
-  auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(first_page_id_));
+  page_id_t page_id = first_page_id_;
+  bool is_get = false;
   RowId rid;
-  page->RLatch();
-  page->GetFirstTupleRid(&rid);
-  page->RUnlatch();
-  buffer_pool_manager_->UnpinPage(page->GetTablePageId(), false);
+  while (!is_get) {
+    if (page_id == INVALID_PAGE_ID) return TableIterator(nullptr, RowId(), nullptr);
+    auto page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(page_id));
+    ASSERT(page != nullptr, "page is nullptr , page_id is wrong");
+    page->RLatch();
+    if (page->GetFirstTupleRid(&rid)) {
+      is_get = true;
+      page->RUnlatch();
+      buffer_pool_manager_->UnpinPage(page->GetTablePageId(), false);
+    } else {
+      page->RUnlatch();
+      buffer_pool_manager_->UnpinPage(page->GetTablePageId(), false);
+      page_id = page->GetNextPageId();
+    }
+  }
   return TableIterator(this, rid, txn);
 }
 
 /**
  * TODO: Student Implement
  */
-TableIterator TableHeap::End() {
-  return TableIterator(this, INVALID_ROWID, nullptr);
-}
+TableIterator TableHeap::End() { return TableIterator(nullptr, RowId(), nullptr); }
