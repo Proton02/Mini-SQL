@@ -30,7 +30,7 @@ uint32_t TableMetadata::SerializeTo(char *buf) const {
 uint32_t TableMetadata::GetSerializedSize() const {
   //return 4 + 4 + MACH_STR_SERIALIZED_SIZE(table_name_) + 4 + schema_->GetSerializedSize();
   // return sizeof(TABLE_METADATA_MAGIC_NUM) + sizeof(table_id_) + table_name_.length()+ sizeof(table_name_.length()) + sizeof(root_page_id_)+schema_->GetSerializedSize();
-  return table_name_.length()+16+schema_->GetSerializedSize();
+  return 4 + 4 + MACH_STR_SERIALIZED_SIZE(table_name_) + 4 + schema_->GetSerializedSize();
 }
 
 /**

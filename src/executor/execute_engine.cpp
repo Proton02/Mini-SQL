@@ -17,7 +17,6 @@
 #include "planner/planner.h"
 #include "utils/utils.h"
 
-using namespace std;
 extern "C" {
 int yyparse(void);
 #include "parser/minisql_lex.h"
@@ -31,19 +30,19 @@ ExecuteEngine::ExecuteEngine() {
     mkdir("./databases", 0777);
     dir = opendir(path);
   }
-  /** When you have completed all the code for
-   *  the test, run it using main.cpp and uncomment
-   *  this part of the code.
-  struct dirent *stdir;
-  while((stdir = readdir(dir)) != nullptr) {
-    if( strcmp( stdir->d_name , "." ) == 0 ||
-        strcmp( stdir->d_name , "..") == 0 ||
-        stdir->d_name[0] == '.')
-      continue;
-    dbs_[stdir->d_name] = new DBStorageEngine(stdir->d_name, false);
-  }
-   **/
-  closedir(dir);
+  // /** When you have completed all the code for
+  //  *  the test, run it using main.cpp and uncomment
+  //  *  this part of the code.*/
+  // struct dirent *stdir;
+  // while((stdir = readdir(dir)) != nullptr) {
+  //   if( strcmp( stdir->d_name , "." ) == 0 ||
+  //       strcmp( stdir->d_name , "..") == 0 ||
+  //       stdir->d_name[0] == '.')
+  //     continue;
+  //   dbs_[stdir->d_name] = new DBStorageEngine(stdir->d_name, false);
+  // }
+  //  /**/
+  // closedir(dir);
 }
 
 std::unique_ptr<AbstractExecutor> ExecuteEngine::CreateExecutor(ExecuteContext *exec_ctx,
@@ -95,6 +94,7 @@ dberr_t ExecuteEngine::ExecutePlan(const AbstractPlanNodeRef &plan, std::vector<
       if (result_set != nullptr) {
         result_set->push_back(row);
       }
+      int a = result_set->size();
     }
   } catch (const exception &ex) {
     std::cout << "Error Encountered in Executor Execution: " << ex.what() << std::endl;
@@ -263,9 +263,10 @@ dberr_t ExecuteEngine::ExecuteDropDatabase(pSyntaxNode ast, ExecuteContext *cont
   if (dbs_.find(db_name) == dbs_.end()) {
     return DB_NOT_EXIST;
   }
-  remove(db_name.c_str());
+  remove(("./databases/" + db_name).c_str());
   delete dbs_[db_name];
   dbs_.erase(db_name);
+  if (db_name == current_db_) current_db_ = "";
   return DB_SUCCESS;
 }
 
@@ -281,17 +282,13 @@ dberr_t ExecuteEngine::ExecuteShowDatabases(pSyntaxNode ast, ExecuteContext *con
   for (const auto &itr : dbs_) {
     if (itr.first.length() > max_width) max_width = itr.first.length();
   }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
-  cout << "| " << std::left << setfill(' ') << setw(max_width) << "Database"
-       << " |" << endl;
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
+  cout << "| " << std::left << setfill(' ') << setw(max_width) << "Database" << " |" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
   for (const auto &itr : dbs_) {
     cout << "| " << std::left << setfill(' ') << setw(max_width) << itr.first << " |" << endl;
   }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
   return DB_SUCCESS;
 }
 
@@ -326,19 +323,17 @@ dberr_t ExecuteEngine::ExecuteShowTables(pSyntaxNode ast, ExecuteContext *contex
   for (const auto &itr : tables) {
     if (itr->GetTableName().length() > max_width) max_width = itr->GetTableName().length();
   }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
   cout << "| " << std::left << setfill(' ') << setw(max_width) << table_in_db << " |" << endl;
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
   for (const auto &itr : tables) {
     cout << "| " << std::left << setfill(' ') << setw(max_width) << itr->GetTableName() << " |" << endl;
   }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << "+" << setfill('-') << setw(max_width + 2) << "" << "+" << endl;
   return DB_SUCCESS;
 }
 
+using namespace std;
 /**
  * TODO: Student Implement
  */
@@ -348,65 +343,64 @@ dberr_t ExecuteEngine::ExecuteCreateTable(pSyntaxNode ast, ExecuteContext *conte
   LOG(INFO) << "ExecuteCreateTable" << std::endl;
 #endif
   // 当前是否选择数据库？
-  if(current_db_.empty()){
+  if (current_db_.empty()) {
     return DB_FAILED;
-  }
-  // 获取表名 通过exec_ctx_获得Catalog调用GetTable()函数
-  CatalogManager *ct_manager = context->GetCatalog();
-  // 语法树列
-  // kNodeColumnDefinition,     column definition, contains column identifier and column type and UNIQUE constrain
-  SyntaxNode *curr_node = ast->child_->next_->child_;
-  vector<Column*> clm;
-  vector<string> pkey;  // primary
-  vector<string> ukey;  // unique
-  for(int idx = 0; !curr_node; curr_node = curr_node->next_){
-    bool uniq;
-    if(curr_node->val_ != nullptr && string(curr_node->val_) == "unique") uniq = true;
-    else uniq = false;
-    if(uniq) ukey.push_back(string(curr_node->child_->val_)); // column nmae;
-    // 列定义
-    if(curr_node->type_ == kNodeColumnDefinition){
-      // int类型
-      Column *clm_tmp;
-      if(curr_node->child_->next_->val_ == "int"){
-        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeInt, idx++, false, uniq);
-      }else if(curr_node->child_->next_->val_ == "char"){  // char类型 可以包含空值
-        int length = stoi(curr_node->child_->next_->child_->val_);
-        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeChar, length, idx++, true, uniq);
-      }else if(curr_node->child_->next_->val_ == "float"){  // float类型 可以包含空值
-        clm_tmp = new Column(string(curr_node->child_->val_), TypeId::kTypeFloat, idx++, true, uniq);
-      }
-      clm.push_back(clm_tmp);
-    } // kNodeColumnDefinitionList, contains several column definitions
-    else if(curr_node->type_ == kNodeColumnList){
-      while(!curr_node->child_){  // 列节点
-        pkey.push_back(string(curr_node->child_->val_));
-        curr_node->child_ = curr_node->child_->next_;
+  }else{
+    string table_name = ast->child_->val_;
+    // 获取表名 通过exec_ctx_获得Catalog调用GetTable()函数
+    CatalogManager *ct_manager = context->GetCatalog();
+    SyntaxNode *node = ast->child_->next_->child_;
+    vector<Column *> clm;
+    vector<string> pkey;  // primary
+    vector<string> ukey;  // unique
+    int index = 0;
+    for(int index = 0; node != nullptr; node = node->next_){
+      // kNodeColumnDefinition,     column definition, contains column identifier and column type and UNIQUE constrain
+      if(node->type_ == kNodeColumnDefinition){
+        Column *column;
+        string clm_name = node->child_->val_;
+        string clm_type = node->child_->next_->val_;
+        bool uniq = node->val_ != nullptr && string(node->val_) == "unique";
+        if(uniq){
+          ukey.push_back(clm_name);
+        }
+        if (clm_type == "int") {  // int类型
+          column = new Column(clm_name, TypeId::kTypeInt, index++, false, uniq);
+        }else if(clm_type == "char"){  // char类型 可以包含空值
+          int length = stoi(node->child_->next_->child_->val_);
+          column = new Column(clm_name, TypeId::kTypeChar, length, index++, true, uniq);
+        }else if(clm_type == "float"){  // float类型 可以包含空值
+          column = new Column(clm_name, TypeId::kTypeFloat, index++, true, uniq);
+        } 
+        clm.push_back(column);
+      }// kNodeColumnDefinitionList, contains several column definitions
+      else if(node->type_ == kNodeColumnList && string(node->val_) == "primary keys"){
+        SyntaxNode *clm_list = node->child_;
+        while(clm_list != nullptr) {
+          pkey.push_back(clm_list->val_);
+          clm_list = clm_list->next_;
+        }
       }
     }
-  }
-  // 根据解析后的语法树新建表，然后给pkey和ukey搞一个索引
-  Schema *schm = new Schema(clm);
-  string table_name = ast->child_->val_;
-  string idx_name;
-  TableInfo *tinfo;
-  IndexInfo *iinfo;
-  auto new_table = ct_manager->CreateTable(table_name, schm, context->GetTransaction(), tinfo);
-  if(new_table != DB_SUCCESS)
-    return new_table;
-  for(auto it:ukey){
-    idx_name = "UNIQUE_" + it + "_" + "ON_" + table_name;
-    ct_manager->CreateIndex(table_name, idx_name, ukey, context->GetTransaction(), iinfo, "btree");
-  }
-  if(pkey.size() > 0){
-    idx_name = "AUTO_CREATED_INDEX_OF_";
-    for(auto it:pkey){
+    Schema *schema = new Schema(clm);
+    TableInfo *tinfo;
+    IndexInfo *iinfo;
+    // 是否创建成功
+    if(ct_manager->CreateTable(table_name, schema, context->GetTransaction(), tinfo) == DB_FAILED){
+      return DB_FAILED;
+    }
+    string idx_name = "PRECREATED_INDEX_OF_";
+    for (auto it:pkey){
       idx_name += it + "_";
     }
     idx_name += "ON_" + table_name;
     ct_manager->CreateIndex(table_name, idx_name, pkey, context->GetTransaction(), iinfo, "btree");
+    for(auto it:ukey){
+      idx_name = "PRECREATED_INDEX_OF_UNIQUE_" + it + "_ON_" + table_name;
+      ct_manager->CreateIndex(table_name, idx_name, {it}, context->GetTransaction(), iinfo, "btree");
+    }
+    return DB_SUCCESS;
   }
-  return new_table;
 }
 
 /**
@@ -421,7 +415,7 @@ dberr_t ExecuteEngine::ExecuteDropTable(pSyntaxNode ast, ExecuteContext *context
   TableInfo *tinfo;
   vector<IndexInfo *> idxs;
   // 数据库为空，或者catalog中drop失败
-  if(current_db_.empty() | ct_manager->DropTable(table_name) == DB_FAILED){
+  if(current_db_.empty() || ct_manager->DropTable(table_name) == DB_FAILED){
     return DB_FAILED;
   }
   int dberr = ct_manager->GetTableIndexes(table_name, idxs);
@@ -433,6 +427,7 @@ dberr_t ExecuteEngine::ExecuteDropTable(pSyntaxNode ast, ExecuteContext *context
   }
   return DB_SUCCESS;
 }
+
 
 /**
  * TODO: Student Implement
@@ -488,9 +483,9 @@ dberr_t ExecuteEngine::ExecuteCreateIndex(pSyntaxNode ast, ExecuteContext *conte
     string idx_name = ast->child_->val_;
     string table_name = ast->child_->next_->val_;
     vector<string> idx_key;
-    SyntaxNode *curr_node = ast->child_->next_->child_;
+    SyntaxNode *curr_node = ast->child_->next_->next_->child_;
     // 从ast子节点开始依次提取idx和table名字
-    for(; !curr_node; curr_node = curr_node->next_){
+    for(; curr_node != nullptr; curr_node = curr_node->next_){
       idx_key.push_back(curr_node->val_);
     }
     IndexInfo *iinfo;
@@ -514,7 +509,7 @@ dberr_t ExecuteEngine::ExecuteDropIndex(pSyntaxNode ast, ExecuteContext *context
     ct_manager->GetTables(tinfo);
     for(auto t:tinfo){
       int dberr = ct_manager->DropIndex(t->GetTableName(), idx_name);
-      if(dberr == DB_SUCCESS) 
+      if(dberr == DB_SUCCESS)
         return DB_SUCCESS;
     }
     return DB_FAILED;
@@ -549,42 +544,50 @@ dberr_t ExecuteEngine::ExecuteExecfile(pSyntaxNode ast, ExecuteContext *context)
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteExecfile" << std::endl;
 #endif
-    string f_name = ast->child_->val_;
+  string file_name(ast->child_->val_);
   fstream file;
-  file.open(f_name);
+  file.open(file_name);
   if(!file.is_open()){
     return DB_FAILED;
   }else{
-    char command[1024]; // 缓冲区大小为 1024
+    char command[1024];
     size_t affected_row = 0;
-    double run_time = 0;
+    double time = 0;
     stringstream ss;
-    ResultWriter writer(ss);  // 格式化输出结果
-    while (!file.eof()){
+    ResultWriter writer(ss);
+    while(!file.eof()){
       memset(command, 0, 1024);
+      int cnt;
       char curr_char;
-      for(int i = 0; !file.eof(); i++){
+      for(cnt = 0; !file.eof(); cnt++){
         curr_char = file.get();
         if(curr_char == ';')
           break;
         else
-          command[i] = curr_char;
+          command[cnt] = curr_char;
       }
+      if(curr_char != ';')
+        break;
+      if(!file.eof())
+        file.get();
+      command[cnt] = curr_char;
       // 创建缓冲区,把命令command搞到缓冲区
-      yy_buffer_state *buffer_pool = yy_scan_string(command);
-      MinisqlParserInit();  // 初始化parser
+      yy_buffer_state *buffer = yy_scan_string(command);
+      MinisqlParserInit();
       yyparse();  // 启动语法解析过程
-      auto execute_res = Execute(MinisqlGetParserRootNode());
+      dberr_t result = Execute(MinisqlGetParserRootNode());
       MinisqlParserFinish();
-      yy_delete_buffer(buffer_pool);
+      yy_delete_buffer(buffer);
       yylex_destroy();
+      if(result == DB_QUIT){
+        writer.EndInformation(affected_row, time, false);
+        return DB_QUIT;
+      }
     }
-    writer.EndInformation(affected_row, run_time, false);
-    cout << writer.stream_.rdbuf()<<endl;
+    writer.EndInformation(affected_row,time,false);
     return DB_SUCCESS;
   }
 }
-
 /**
  * TODO: Student Implement
  */
@@ -595,3 +598,4 @@ dberr_t ExecuteEngine::ExecuteQuit(pSyntaxNode ast, ExecuteContext *context) {
   current_db_ = "";
   return DB_QUIT;
 }
+

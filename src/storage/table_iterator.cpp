@@ -31,16 +31,13 @@ TableIterator::~TableIterator() {}
 bool TableIterator::operator==(const TableIterator &itr) const {
   if (table_heap_ == nullptr && itr.table_heap_ == nullptr) {
     return true;
+  } else
+  {
+    return table_heap_ == itr.table_heap_ && row_.GetRowId() == itr.row_.GetRowId();
   }
-  return table_heap_ == itr.table_heap_ && row_.GetRowId() == itr.row_.GetRowId();
 }
 
-bool TableIterator::operator!=(const TableIterator &itr) const {
-  if (table_heap_ == nullptr && itr.table_heap_ == nullptr) {
-    return false;
-  }
-  return !(table_heap_ == itr.table_heap_ && row_.GetRowId() == itr.row_.GetRowId());
-}
+bool TableIterator::operator!=(const TableIterator &itr) const { return !(*this == itr); }
 
 const Row &TableIterator::operator*() {
   return row_;
@@ -50,7 +47,7 @@ Row *TableIterator::operator->() {
   return &row_;
 }
 
-TableIterator &TableIterator::operator=(const TableIterator &itr) noexcept {
+TableIterator &TableIterator::operator=(const TableIterator &itr) noexcept { 
   table_heap_ = itr.table_heap_;
   row_ = itr.row_;
   txn_ = itr.txn_;
@@ -69,7 +66,7 @@ TableIterator &TableIterator::operator++() {
 }
 
 // iter++
-TableIterator TableIterator::operator++(int) {
+TableIterator TableIterator::operator++(int) { 
   TableIterator temp(*this);
   ++*this;
   return temp;
